@@ -1,0 +1,13 @@
+# Day 2 sweep: rank/alpha sensitivity
+# Inherits all training params from lora_baseline.yaml; only lora.r / lora.lora_alpha change.
+base_config: "configs/lora_baseline.yaml"
+
+sweep:
+  - r: 4,  lora_alpha: 4,   run_name: "r4_a4"
+  - r: 4,  lora_alpha: 8,   run_name: "r4_a8"
+  - r: 8,  lora_alpha: 8,   run_name: "r8_a8"
+  - r: 8,  lora_alpha: 16,  run_name: "r8_a16"   # baseline repeated
+  - r: 16, lora_alpha: 16,  run_name: "r16_a16"
+  - r: 16, lora_alpha: 32,  run_name: "r16_a32"
+  - r: 32, lora_alpha: 32,  run_name: "r32_a32"
+  - r: 32, lora_alpha: 64,  run_name: "r32_a64"
