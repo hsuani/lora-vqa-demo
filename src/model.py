@@ -20,7 +20,8 @@ def load_model_and_processor(model_name: str = "Qwen/Qwen2-VL-2B-Instruct"):
 
 
 def apply_lora(model, r: int, lora_alpha: int, lora_dropout: float = 0.05,
-               target_modules: list[str] | None = None):
+               target_modules: list[str] | None = None,
+               bias: str = "none", task_type=TaskType.CAUSAL_LM):
     if target_modules is None:
         target_modules = ["q_proj", "v_proj"]
 
@@ -29,8 +30,8 @@ def apply_lora(model, r: int, lora_alpha: int, lora_dropout: float = 0.05,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
         target_modules=target_modules,
-        bias="none",
-        task_type=TaskType.CAUSAL_LM,
+        bias=bias,
+        task_type=task_type,
     )
     model = get_peft_model(model, config)
     model.print_trainable_parameters()
