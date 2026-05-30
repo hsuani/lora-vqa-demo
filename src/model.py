@@ -9,9 +9,13 @@ def load_model_and_processor(model_name: str = "Qwen/Qwen2-VL-2B-Instruct"):
     model = Qwen2VLForConditionalGeneration.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,
-        device_map="auto",
         trust_remote_code=True,
     )
+    # Single-GPU: place the whole model on cuda explicitly. device_map="auto"
+    # mis-estimates and offloads parts to CPU on a 2B model even with free VRAM,
+    # which transformers>=4.5x rejects outright.
+    if torch.cuda.is_available():
+        model = model.to("cuda")
     return model, processor
 
 
