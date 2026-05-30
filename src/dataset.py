@@ -48,9 +48,13 @@ class QwenVQACollator:
     labels so loss is only computed on the answer span.
     """
 
-    def __init__(self, processor, max_length: int = 512):
+    def __init__(self, processor, max_pixels: int = 512 * 28 * 28):
         self.processor = processor
-        self.max_length = max_length
+        # Cap image resolution so the number of vision tokens stays bounded.
+        # Qwen2-VL emits one token per 28x28 patch; max_pixels caps that count
+        # without truncating (truncating would chop image placeholders and
+        # desync the text/input_ids image-token counts).
+        self.max_pixels = max_pixels
 
     def __call__(self, examples):
         images, full_texts, prompt_texts = [], [], []
@@ -84,12 +88,15 @@ class QwenVQACollator:
                 )
             )
 
+        # No truncation: it would cut image placeholder tokens and break the
+        # processor's text/input_ids image-token count check. Bound vision
+        # tokens via max_pixels (set on the image processor) instead.
+        if hasattr(self.processor, "image_processor"):
+            self.processor.image_processor.max_pixels = self.max_pixels
         batch = self.processor(
             text=full_texts,
             images=images,
             padding=True,
-            truncation=True,
-            max_length=self.max_length,
             return_tensors="pt",
         )
 
