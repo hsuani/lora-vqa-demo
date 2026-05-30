@@ -1,6 +1,8 @@
 """VQA exact-match accuracy (canonical normalization)."""
 import re
 
+from src.dataset import get_answer
+
 
 _ARTICLES = re.compile(r"\b(a|an|the)\b")
 _PUNCT = re.compile(r"[^\w\s]")
@@ -47,6 +49,6 @@ def evaluate_model(model, processor, eval_dataset, device="cuda", max_new_tokens
 
         decoded = processor.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
         preds.append(decoded.strip())
-        refs.append(example["answers"][0]["answer"])
+        refs.append(get_answer(example))
 
     return exact_match(preds, refs)

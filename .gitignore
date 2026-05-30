@@ -30,3 +30,6 @@ wandb/
 
 # results kept (small CSVs + figures)
 !results/
+
+# local Claude Code config
+.claude/

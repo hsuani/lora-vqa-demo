@@ -5,18 +5,14 @@ Single training run. Usage:
 """
 import argparse
 import csv
-import json
-import os
 import sys
 from pathlib import Path
 
-import torch
 import yaml
-from transformers import TrainingArguments
-from trl import SFTTrainer
+from transformers import Trainer, TrainingArguments
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.dataset import load_vqa_subset
+from src.dataset import QwenVQACollator, load_vqa_subset
 from src.model import apply_lora, count_trainable_params, load_model_and_processor
 from src.metrics import evaluate_model
 
@@ -52,22 +48,26 @@ def main():
 
     train_ds, eval_ds = load_vqa_subset(cfg["sample_size"], cfg["seed"])
 
+    collator = QwenVQACollator(processor)
+
     training_args = TrainingArguments(
         **{k: v for k, v in cfg["training"].items() if k != "output_dir"},
         output_dir=cfg["training"]["output_dir"],
         run_name=run_name,
+        remove_unused_columns=False,  # keep image/question cols for the collator
     )
 
-    trainer = SFTTrainer(
+    trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
-        eval_dataset=eval_ds,
+        data_collator=collator,
     )
     trainer.train()
 
-    # Eval
-    acc = evaluate_model(model, processor, eval_ds)
+    # Eval (manual generate-and-match on held-out split)
+    device = next(model.parameters()).device
+    acc = evaluate_model(model, processor, eval_ds, device=device)
     print(f"\nEval exact-match accuracy: {acc:.4f}")
 
     # Log to results CSV
