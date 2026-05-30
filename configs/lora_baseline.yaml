@@ -1,6 +1,6 @@
 # Day 1 baseline: rank=8, alpha=16
 model_name: "Qwen/Qwen2-VL-2B-Instruct"
-dataset: "HuggingFaceM4/VQAv2"
+dataset: "lmms-lab/VQAv2"
 dataset_split: "validation"
 sample_size: 5000        # 4000 train / 1000 eval
 seed: 42

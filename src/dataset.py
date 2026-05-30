@@ -10,9 +10,12 @@ def normalize_answer(ans: str) -> str:
     return _PUNCT.sub("", ans.lower()).strip()
 
 
-def load_vqa_subset(sample_size: int = 5000, seed: int = 42):
-    ds = load_dataset("HuggingFaceM4/VQAv2", split="validation", trust_remote_code=True)
-    ds = ds.shuffle(seed=seed).select(range(sample_size))
+def load_vqa_subset(sample_size: int = 5000, seed: int = 42,
+                    dataset_name: str = "lmms-lab/VQAv2"):
+    # datasets>=3 dropped loading-script support, so use a parquet-native repo
+    # (lmms-lab/VQAv2) instead of the script-based HuggingFaceM4/VQAv2.
+    ds = load_dataset(dataset_name, split="validation")
+    ds = ds.shuffle(seed=seed).select(range(min(sample_size, len(ds))))
     split = ds.train_test_split(test_size=0.2, seed=seed)
     return split["train"], split["test"]
 
@@ -22,13 +25,18 @@ def build_prompt(question: str) -> str:
 
 
 def get_answer(example) -> str:
-    """VQAv2 gold answer: prefer multiple_choice_answer, fall back to first annotator."""
+    """VQAv2 gold answer: prefer multiple_choice_answer, fall back to first annotator.
+
+    Handles both annotation formats: answers as list[dict{"answer": ...}]
+    (original VQAv2) and answers as list[str] (some parquet mirrors).
+    """
     ans = example.get("multiple_choice_answer")
     if ans:
         return ans
     answers = example.get("answers") or []
     if answers:
-        return answers[0]["answer"]
+        first = answers[0]
+        return first["answer"] if isinstance(first, dict) else first
     return ""
 
 
