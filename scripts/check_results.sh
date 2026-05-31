@@ -17,9 +17,9 @@ if [ "$status" = "TERMINATED" ]; then
   done
 fi
 
-echo "=== train.log (last 30 lines) ==="
+echo "=== sweep.log markers (or train.log tail) ==="
 gcloud compute ssh "$VM" --zone="$ZONE" -- -T \
-  "tail -n 30 ~/train.log 2>/dev/null" 2>/dev/null
+  "if [ -f ~/sweep.log ]; then grep -E 'SWEEP_START|SWEEP_END|^>>> ' ~/sweep.log; else tail -n 30 ~/train.log 2>/dev/null; fi" 2>/dev/null
 
 echo ""
 echo "=== results/sweep_results.csv ==="
