@@ -74,8 +74,8 @@ def main():
     acc = evaluate_model(model, processor, eval_ds, device=device)
     print(f"\nEval exact-match accuracy: {acc:.4f}")
 
-    # Log to results CSV
-    results_path = Path("results/sweep_results.csv")
+    # Log to results CSV (RESULTS_PATH env overrides the default target)
+    results_path = Path(os.environ.get("RESULTS_PATH", "results/sweep_results.csv"))
     results_path.parent.mkdir(exist_ok=True)
     write_header = not results_path.exists()
     with open(results_path, "a", newline="") as f:
