@@ -23,6 +23,8 @@ def parse_args():
     p.add_argument("--r", type=int, default=None)
     p.add_argument("--lora_alpha", type=int, default=None)
     p.add_argument("--run_name", type=str, default=None)
+    p.add_argument("--sample_size", type=int, default=None,
+                   help="override cfg.sample_size (e.g. 2000 for a fast sweep)")
     return p.parse_args()
 
 
@@ -35,6 +37,8 @@ def main():
         cfg["lora"]["r"] = args.r
     if args.lora_alpha is not None:
         cfg["lora"]["lora_alpha"] = args.lora_alpha
+    if args.sample_size is not None:
+        cfg["sample_size"] = args.sample_size
     run_name = args.run_name or f"r{cfg['lora']['r']}_a{cfg['lora']['lora_alpha']}"
     cfg["training"]["output_dir"] = f"outputs/{run_name}"
 
