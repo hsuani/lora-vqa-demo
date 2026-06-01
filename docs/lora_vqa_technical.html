@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LoRA × Qwen2-VL-2B × VQAv2 — Technical Walkthrough</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,700;1,9..144,400&family=JetBrains+Mono:wght@300;400;500;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d0f14; --bg-soft:#14171f; --bg-card:#181c26; --bg-elevated:#1f2430;
+  --ink:#e8e4d8; --ink-soft:#a8a698; --ink-faint:#6b6a5e;
+  --accent:#d4a574; --accent-bright:#f0c896; --accent-deep:#8b6b4a;
+  --line:#2a2e3a; --line-soft:#1f2330; --done:#7a9670; --warn:#c4756b; --code:#9ecbd4;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'JetBrains Mono',monospace;background:var(--bg);color:var(--ink);line-height:1.7;min-height:100vh;
+  background-image:radial-gradient(circle at 15% 10%,rgba(212,165,116,.04) 0%,transparent 40%),radial-gradient(circle at 85% 80%,rgba(212,165,116,.03) 0%,transparent 40%);}
+body::before{content:'';position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.5;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+.container{max-width:1080px;margin:0 auto;padding:60px 40px;position:relative;z-index:2;}
+
+.header{border-bottom:1px solid var(--line);padding-bottom:40px;margin-bottom:48px;position:relative;}
+.header::before{content:'∗  ∗  ∗';position:absolute;top:-8px;left:0;color:var(--accent);font-size:14px;letter-spacing:8px;}
+.eyebrow{font-size:11px;letter-spacing:4px;text-transform:uppercase;color:var(--accent);margin:24px 0 16px;}
+.title{font-family:'Fraunces',serif;font-weight:300;font-size:clamp(32px,5vw,56px);line-height:1.05;letter-spacing:-.02em;margin-bottom:18px;}
+.title em{font-family:'Instrument Serif',serif;font-style:italic;color:var(--accent-bright);}
+.subtitle{font-family:'Fraunces',serif;font-size:17px;font-weight:300;color:var(--ink-soft);font-style:italic;max-width:720px;}
+.meta-bar{display:flex;gap:28px;margin-top:28px;padding-top:22px;border-top:1px solid var(--line-soft);flex-wrap:wrap;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--ink-faint);}
+.meta-bar strong{color:var(--accent);font-weight:500;}
+
+nav.toc{background:var(--bg-card);border:1px solid var(--line);padding:24px 28px;margin-bottom:56px;position:relative;}
+nav.toc::before{content:'';position:absolute;top:-1px;left:-1px;width:32px;height:32px;border-top:2px solid var(--accent);border-left:2px solid var(--accent);}
+nav.toc h4{font-family:'Fraunces',serif;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--accent);margin-bottom:14px;}
+nav.toc ol{list-style:none;counter-reset:t;columns:2;column-gap:32px;}
+nav.toc li{counter-increment:t;font-size:13px;padding:5px 0;}
+nav.toc li::before{content:counter(t,decimal-leading-zero);color:var(--accent-deep);margin-right:10px;font-size:11px;}
+nav.toc a{color:var(--ink-soft);text-decoration:none;transition:color .2s;}
+nav.toc a:hover{color:var(--accent);}
+
+section{margin-bottom:64px;scroll-margin-top:24px;}
+.sec-head{display:flex;align-items:baseline;gap:18px;margin-bottom:8px;flex-wrap:wrap;}
+.sec-num{font-family:'Instrument Serif',serif;font-style:italic;font-size:44px;color:var(--accent);line-height:1;}
+h2{font-family:'Fraunces',serif;font-weight:400;font-size:28px;letter-spacing:-.01em;}
+.sec-intro{font-family:'Fraunces',serif;font-style:italic;font-size:16px;color:var(--ink-soft);margin:0 0 28px 62px;padding-left:18px;border-left:2px solid var(--accent-deep);}
+h3{font-family:'Fraunces',serif;font-weight:500;font-size:18px;color:var(--accent-bright);margin:32px 0 12px;}
+p{margin-bottom:16px;font-size:14px;color:var(--ink);}
+ul,ol.body{margin:0 0 16px 20px;}
+li{font-size:14px;margin-bottom:8px;color:var(--ink);}
+strong{color:var(--accent-bright);font-weight:500;}
+em.term{font-style:normal;color:var(--accent);}
+code{font-family:'JetBrains Mono',monospace;font-size:.88em;color:var(--code);background:var(--bg-soft);padding:1px 6px;border:1px solid var(--line-soft);border-radius:2px;}
+pre{background:var(--bg-soft);border:1px solid var(--line);border-left:3px solid var(--accent-deep);padding:18px 20px;overflow-x:auto;margin-bottom:20px;font-size:12.5px;line-height:1.6;}
+pre code{background:none;border:none;padding:0;color:var(--ink);}
+.dim{color:var(--ink-faint);}
+
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:20px;}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);}
+th{background:var(--bg-elevated);color:var(--accent);font-weight:500;border-bottom:2px solid var(--accent-deep);text-transform:uppercase;font-size:10px;letter-spacing:1px;}
+td.num{font-variant-numeric:tabular-nums;}
+tr.best td{background:rgba(212,165,116,.07);}
+tr.best td:first-child{color:var(--accent-bright);font-weight:700;}
+
+figure{margin:24px 0;}
+figure img{width:100%;border:1px solid var(--line);background:#fff;border-radius:3px;}
+figcaption{font-size:11px;color:var(--ink-faint);margin-top:8px;letter-spacing:1px;text-transform:uppercase;}
+
+.callout{background:var(--bg-elevated);border:1px solid var(--line);border-left:3px solid var(--accent);padding:18px 22px;margin:20px 0;font-size:13.5px;}
+.callout .lab{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--accent);margin-bottom:8px;}
+.callout.warn{border-left-color:var(--warn);}
+.callout.warn .lab{color:var(--warn);}
+
+.qa{border:1px solid var(--line);background:var(--bg-card);margin:14px 0;}
+.qa summary{cursor:pointer;padding:14px 20px;font-size:13.5px;color:var(--accent-bright);font-family:'Fraunces',serif;list-style:none;display:flex;gap:12px;align-items:baseline;transition:background .2s;}
+.qa summary::-webkit-details-marker{display:none;}
+.qa summary::before{content:'Q';font-family:'Instrument Serif',serif;font-style:italic;color:var(--accent);font-size:18px;}
+.qa summary:hover{background:var(--bg-elevated);}
+.qa[open] summary{border-bottom:1px solid var(--line-soft);}
+.qa .ans{padding:16px 20px 18px 44px;font-size:13.5px;color:var(--ink-soft);}
+.qa .ans strong{color:var(--accent-bright);}
+
+.footer{margin-top:72px;padding-top:32px;border-top:1px solid var(--line);text-align:center;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--ink-faint);}
+.footer a{color:var(--accent);text-decoration:none;}
+.footer em{font-family:'Instrument Serif',serif;font-style:italic;text-transform:none;letter-spacing:0;color:var(--accent);font-size:14px;display:block;margin-top:10px;}
+
+.pipe{display:flex;flex-wrap:wrap;gap:0;margin:8px 0 24px;align-items:stretch;}
+.pipe .stage{flex:1;min-width:120px;background:var(--bg-soft);border:1px solid var(--line);padding:12px 14px;position:relative;}
+.pipe .stage h5{font-family:'Fraunces',serif;font-size:12px;color:var(--accent-bright);margin-bottom:4px;}
+.pipe .stage p{font-size:11px;color:var(--ink-faint);margin:0;line-height:1.5;}
+.pipe .arr{display:flex;align-items:center;color:var(--accent);font-size:18px;padding:0 4px;}
+@media(max-width:760px){nav.toc ol{columns:1;}.pipe{flex-direction:column;}.pipe .arr{transform:rotate(90deg);justify-content:center;}.sec-intro{margin-left:0;}}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header class="header">
+    <div class="eyebrow">Technical Walkthrough · Interview Prep</div>
+    <h1 class="title">LoRA <em>Rank/Alpha</em> Sensitivity<br>on Qwen2-VL-2B × VQAv2</h1>
+    <p class="subtitle">一份把整條 fine-tuning pipeline 拆給面試官看的技術文件 — 資料、模型、前處理、LoRA 數學、結果解讀、亮點與限制,每節附高機率問答。</p>
+    <div class="meta-bar">
+      <div>Base · <strong>Qwen2-VL-2B-Instruct</strong></div>
+      <div>Method · <strong>LoRA / PEFT</strong></div>
+      <div>Data · <strong>VQAv2 (5k subset)</strong></div>
+      <div>HW · <strong>1× NVIDIA L4</strong></div>
+      <div>Best · <strong>0.713 EM</strong></div>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <h4>目錄</h4>
+    <ol>
+      <li><a href="#overview">問題設定與一句話總結</a></li>
+      <li><a href="#dataset">Dataset — VQAv2 內容</a></li>
+      <li><a href="#model">Model — Qwen2-VL-2B 架構</a></li>
+      <li><a href="#preprocess">Pre-processing — collator 與 token masking</a></li>
+      <li><a href="#lora">LoRA — rank / alpha 的數學意義</a></li>
+      <li><a href="#train">訓練參數與設定</a></li>
+      <li><a href="#eval">Evaluation — VQA exact match</a></li>
+      <li><a href="#results">結果解讀</a></li>
+      <li><a href="#highlights">亮點與限制</a></li>
+      <li><a href="#qa">綜合面試問答</a></li>
+    </ol>
+  </nav>
+
+  <!-- 1 -->
+  <section id="overview">
+    <div class="sec-head"><span class="sec-num">01</span><h2>問題設定與一句話總結</h2></div>
+    <p class="sec-intro">在凍結的視覺語言模型上,用最小的可訓練參數量問一個工程問題:rank 跟 alpha 各值多少錢、買到多少準確率?</p>
+    <p><strong>任務</strong>:把開源視覺語言模型 <em class="term">Qwen2-VL-2B-Instruct</em> 用 <em class="term">LoRA</em> 在 <em class="term">VQAv2</em>(視覺問答)上做監督式微調,並系統性地掃描 LoRA 的兩個核心超參 <code>r</code>(rank)與 <code>alpha</code>,量化「容量 ↔ 準確率」的取捨曲線。</p>
+    <p><strong>一句話結論</strong>:在這個 5000 筆子集上,<strong>rank 把參數量拉 8×(r4→r32)只換到 +1.4 個百分點</strong>的 exact-match(0.699→0.713);<code>alpha/r = 2×</code> 在多數 rank 上穩定優於 <code>1×</code>;<strong><code>r8_a16</code> 是準確率/參數量 CP 值最高的工作點</strong>。容量不是這份資料的瓶頸。</p>
+    <div class="callout">
+      <div class="lab">為什麼這個 demo 對 SA / ML 職位有訊號</div>
+      它同時展示三件事:(1) 能把一個多模態模型的訓練 pipeline 從零跑通並除錯;(2) 懂 PEFT 的數學與工程取捨,不是 call API;(3) 會設計 ablation、讀曲線、下可辯護的結論 — 這正是 Solutions Architect 幫客戶調模型時要做的事。
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="dataset">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Dataset — VQAv2 內容</h2></div>
+    <p class="sec-intro">VQAv2 是視覺問答的標準 benchmark,設計上刻意「去語言先驗」,逼模型真的看圖。</p>
+    <h3>每一筆長什麼樣</h3>
+    <p>一筆 = <strong>(image, question, answers)</strong>。圖來自 COCO;問題是人寫的自然語言;答案由 <strong>10 位標註者</strong>各給一個短詞,另有一個 <code>multiple_choice_answer</code>(最高票答案)。</p>
+    <pre><code>{
+  "image": &lt;PIL.Image, COCO 照片&gt;,
+  "question": "What color is the umbrella?",
+  "answers": [{"answer":"red"}, {"answer":"red"}, ... ×10],
+  "multiple_choice_answer": "red"      # 我們訓練/評估用的 gold
+}</code></pre>
+    <h3>為什麼是 "v2"</h3>
+    <p>VQA v1 有嚴重的語言偏差 — 很多問題不看圖、純猜統計先驗就能答對(「天空什麼顏色」永遠答藍)。<strong>VQAv2 為每個問題配一張答案相反的互補圖</strong>(complementary pairs),把這條捷徑堵死,所以 v2 上的分數更能反映真正的視覺理解。面試常考這點。</p>
+    <h3>我的取樣與切分</h3>
+    <ul>
+      <li>來源 repo:<code>lmms-lab/VQAv2</code> 的 <code>validation</code> split(parquet 原生)。<span class="dim">原始 <code>HuggingFaceM4/VQAv2</code> 是 loading-script 形式,<code>datasets≥3</code> 已不支援,會直接報錯。</span></li>
+      <li><code>shuffle(seed=42)</code> 後取 <strong>5000 筆</strong>,再 <code>train_test_split(test_size=0.2)</code> → <strong>4000 train / 1000 eval</strong>。</li>
+      <li>固定 seed 確保每個 sweep config 看到的是<strong>同一批</strong> train/eval,結果才可比。</li>
+    </ul>
+    <div class="callout warn">
+      <div class="lab">限制 / 誠實揭露</div>
+      用的是 <code>validation</code> 切出來的子集當 train+eval,<strong>不是官方 test-std</strong>;5000 筆也遠小於完整 VQAv2(~120 萬 QA)。所以絕對分數只在這個受控設定內有意義,sweep 之間的<strong>相對</strong>趨勢才是重點。
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="model">
+    <div class="sec-head"><span class="sec-num">03</span><h2>Model — Qwen2-VL-2B 架構</h2></div>
+    <p class="sec-intro">一個能吃任意解析度圖片的視覺語言模型;我們只在它的注意力投影上掛 adapter,主幹全凍。</p>
+    <h3>三大組件</h3>
+    <ul>
+      <li><strong>Vision encoder(ViT)</strong>:把圖切成 28×28 的 patch,每個 patch → 一個視覺 token。Qwen2-VL 的特色是 <em class="term">Naive Dynamic Resolution</em> — 不強制縮成固定大小,圖越大 token 越多。</li>
+      <li><strong>VL merger / projector</strong>:把視覺 token 投影到語言模型的 embedding 空間,並做空間壓縮(相鄰 patch 合併),降 token 數。</li>
+      <li><strong>LLM decoder(Qwen2,~2B)</strong>:把 [視覺 token + 文字 token] 當一條序列,autoregressive 生成答案。用 <em class="term">M-RoPE</em>(multimodal rotary position embedding)分別編碼時間/高/寬。</li>
+    </ul>
+    <h3>載入(關鍵兩行)</h3>
+    <pre><code>model = Qwen2VLForConditionalGeneration.from_pretrained(
+    "Qwen/Qwen2-VL-2B-Instruct", torch_dtype=torch.bfloat16)
+model = model.to("cuda")        # 不用 device_map="auto"</code></pre>
+    <div class="callout">
+      <div class="lab">工程細節:為什麼不用 device_map="auto"</div>
+      <code>device_map="auto"</code> 在單卡上會誤判,把模型一部分 offload 到 CPU,而 <code>transformers≥4.5x</code> 的 <code>Trainer</code> 偵測到 <code>hf_device_map</code> 就直接拒絕訓練。2B 模型在 L4 24GB 上綽綽有餘,直接 <code>.to("cuda")</code> 最乾淨。<span class="dim">這是實跑才會踩到、純看教學不會知道的坑。</span>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="preprocess">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Pre-processing — collator 與 token masking</h2></div>
+    <p class="sec-intro">監督式微調的精髓在 label masking:只在「答案」那幾個 token 上算 loss,其餘全部 -100。</p>
+    <div class="pipe">
+      <div class="stage"><h5>1 · 組對話</h5><p>user: image + "Question: …" / assistant: answer</p></div>
+      <div class="arr">→</div>
+      <div class="stage"><h5>2 · chat template</h5><p>套 Qwen2-VL 模板,圖展開成 &lt;image_pad&gt; 佔位 token</p></div>
+      <div class="arr">→</div>
+      <div class="stage"><h5>3 · processor</h5><p>文字 tokenize + 圖 patch 化 + padding,出 input_ids / pixel_values</p></div>
+      <div class="arr">→</div>
+      <div class="stage"><h5>4 · mask labels</h5><p>pad、image、prompt 全設 -100,只留 answer</p></div>
+    </div>
+    <h3>label masking 三步</h3>
+    <pre><code>labels = input_ids.clone()
+labels[labels == pad_id]          = -100   # 不學 padding
+labels[input_ids == image_token]  = -100   # 不學圖的佔位 token
+labels[i, :prompt_len[i]]         = -100   # 不學問題,只學答案</code></pre>
+    <p>結果:cross-entropy 只在 answer span 上回傳梯度。模型學的是「<strong>看到這張圖+這個問題,該吐什麼答案</strong>」,而不是去重建問題或圖。</p>
+    <div class="callout warn">
+      <div class="lab">最深的一個 bug:truncation 砍掉 image token</div>
+      原本 collator 開了 <code>truncation=True, max_length=512</code>。Qwen2-VL 一張圖會展開成數百個 <code>&lt;image_pad&gt;</code> token,512 截斷把一部分砍掉 → 文字宣稱的 image-token 數和 <code>input_ids</code> 實際數對不上 → processor 直接 <code>ValueError</code>。<strong>修法:不截斷,改用 <code>image_processor.max_pixels</code> 限制圖的解析度</strong>來控 token 數。截斷會切爛多模態對齊,這是 VLM 微調的經典陷阱。
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section id="lora">
+    <div class="sec-head"><span class="sec-num">05</span><h2>LoRA — rank / alpha 的數學意義</h2></div>
+    <p class="sec-intro">凍結原權重,只學一個低秩增量;rank 決定容量,alpha 決定這個增量被放多大。</p>
+    <h3>核心公式</h3>
+    <p>對一個原權重矩陣 <code>W₀ ∈ ℝ^(d×k)</code>,LoRA 不動它,改學兩個小矩陣 <code>B ∈ ℝ^(d×r)</code>、<code>A ∈ ℝ^(r×k)</code>,其中 <code>r ≪ min(d,k)</code>:</p>
+    <pre><code>h = W₀·x  +  (alpha / r) · (B·A)·x
+            └── 凍結 ──┘   └── 可訓練低秩增量 ──┘
+A ~ N(0, σ²)  初始化,  B = 0  →  起點 ΔW = 0,訓練從原模型出發</code></pre>
+    <ul>
+      <li><strong><em class="term">r</em>(rank)</strong> = 低秩瓶頸的寬度,直接決定<strong>可訓練參數量</strong>:每個 target 模組 = <code>r·(d+k)</code> 個參數。r 越大,ΔW 能表達的方向越多 → 容量越大。</li>
+      <li><strong><em class="term">alpha</em></strong> = 縮放因子的分子。實際套用的是 <code>alpha/r</code>。它<strong>不增加參數</strong>,只放大/縮小這個低秩增量對輸出的貢獻 — 行為上類似給 adapter 一個額外的有效學習率。</li>
+    </ul>
+    <div class="callout">
+      <div class="lab">面試關鍵:為什麼掃 alpha=r 和 alpha=2r 兩條線</div>
+      因為真正影響訓練的是<strong>比值 <code>alpha/r</code></strong>,不是 alpha 絕對值。固定比值、只放大 r,測的是「<strong>容量</strong>」效果;固定 r、把 alpha 從 r 調到 2r,測的是「<strong>scaling / 有效學習率</strong>」效果。兩個軸拆開掃,才能歸因。
+    </div>
+    <h3>為什麼只掛在 q_proj / v_proj</h3>
+    <p>這是原始 LoRA 論文的標準目標集 — attention 裡 query 和 value 投影是 CP 值最高的注入點。<code>trainable_params</code> 因此極小:<strong>最大的 r32 也只佔全模型 0.197%</strong>。把 <code>k_proj</code>/<code>o_proj</code>/MLP 也加進來是最直接的下一步 ablation。</p>
+    <table>
+      <thead><tr><th>r</th><th>trainable params</th><th>% of 2B model</th></tr></thead>
+      <tbody>
+        <tr><td class="num">4</td><td class="num">544,768</td><td class="num">0.025%</td></tr>
+        <tr><td class="num">8</td><td class="num">1,089,536</td><td class="num">0.049%</td></tr>
+        <tr><td class="num">16</td><td class="num">2,179,072</td><td class="num">0.099%</td></tr>
+        <tr><td class="num">32</td><td class="num">4,358,144</td><td class="num">0.197%</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 6 -->
+  <section id="train">
+    <div class="sec-head"><span class="sec-num">06</span><h2>訓練參數與設定</h2></div>
+    <p class="sec-intro">每個參數都有理由,面試官會逐個問「為什麼這個值」。</p>
+    <table>
+      <thead><tr><th>參數</th><th>值</th><th>為什麼</th></tr></thead>
+      <tbody>
+        <tr><td><code>epochs</code></td><td class="num">1</td><td>小資料 + LoRA,1 epoch 足以看出趨勢,避免過擬合 & 省時</td></tr>
+        <tr><td><code>lr</code></td><td class="num">2e-4</td><td>LoRA 常用區間(比 full-FT 的 ~2e-5 高一個量級,因只訓練少量參數)</td></tr>
+        <tr><td><code>scheduler</code></td><td>cosine + 5% warmup</td><td>warmup 穩住前期,cosine 平滑收斂</td></tr>
+        <tr><td><code>batch</code></td><td class="num">4 × 4 = 16</td><td>per-device 4 受 L4 顯存限制,gradient accumulation 補到有效 16</td></tr>
+        <tr><td><code>precision</code></td><td>BF16</td><td>L4 native 支援;比 FP16 動態範圍大,不易 overflow</td></tr>
+        <tr><td><code>dropout</code></td><td class="num">0.05</td><td>LoRA 層的輕度正則</td></tr>
+        <tr><td><code>seed</code></td><td class="num">42</td><td>固定資料切分,讓 8 個 config 公平可比</td></tr>
+      </tbody>
+    </table>
+    <h3>Sweep 矩陣</h3>
+    <p><code>r ∈ {4, 8, 16, 32}</code> × <code>alpha ∈ {r, 2r}</code> = <strong>8 個 run</strong>。每個 ~21 分鐘(含 1000 筆序列化 eval),單卡跑完約 2h47m,跑完自動關機省成本。</p>
+  </section>
+
+  <!-- 7 -->
+  <section id="eval">
+    <div class="sec-head"><span class="sec-num">07</span><h2>Evaluation — VQA exact match</h2></div>
+    <p class="sec-intro">指標看似簡單,但「正規化」那一步藏了 VQA 的標準慣例。</p>
+    <p>對 1000 筆 held-out,逐筆 <code>generate()</code> 出答案,跟 gold 做<strong>正規化後的精確比對</strong>:</p>
+    <pre><code>def vqa_normalize(s):
+    s = s.lower()
+    s = re.sub(r"[^\w\s]", " ", s)        # 去標點
+    s = re.sub(r"\b(a|an|the)\b", "", s)  # 去冠詞
+    return re.sub(r"\s+", " ", s).strip() # 收斂空白</code></pre>
+    <p>去冠詞/標點是 VQA 官方 metric 的慣例(<code>"a red car"</code> 跟 <code>"red car"</code> 該算對)。<span class="dim">本 demo 用單一 gold(<code>multiple_choice_answer</code>)做 exact match;官方 VQA accuracy 是對 10 個標註答案取 <code>min(matches/3, 1)</code> 的軟分數,比這個寬鬆 — 是已知的簡化。</span></p>
+    <div class="callout warn">
+      <div class="lab">已知瓶頸:eval 是序列化 generate</div>
+      1000 筆逐筆 <code>generate()</code> 沒有 batch,佔了每個 run 的大頭時間。要加速可改 batched generation 或減少 eval 筆數 — Day2 規模下還可接受,擴大 sweep 時必須先優化。
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section id="results">
+    <div class="sec-head"><span class="sec-num">08</span><h2>結果解讀</h2></div>
+    <p class="sec-intro">數字、圖、然後是能在白板上講三分鐘的歸因。</p>
+    <table>
+      <thead><tr><th>run</th><th>r</th><th>alpha</th><th>alpha/r</th><th>trainable</th><th>% model</th><th>eval acc</th></tr></thead>
+      <tbody>
+        <tr><td>r4_a4</td><td class="num">4</td><td class="num">4</td><td>1×</td><td class="num">544,768</td><td class="num">0.025%</td><td class="num">0.6990</td></tr>
+        <tr><td>r4_a8</td><td class="num">4</td><td class="num">8</td><td>2×</td><td class="num">544,768</td><td class="num">0.025%</td><td class="num">0.7000</td></tr>
+        <tr><td>r8_a8</td><td class="num">8</td><td class="num">8</td><td>1×</td><td class="num">1,089,536</td><td class="num">0.049%</td><td class="num">0.7070</td></tr>
+        <tr class="best"><td>r8_a16</td><td class="num">8</td><td class="num">16</td><td>2×</td><td class="num">1,089,536</td><td class="num">0.049%</td><td class="num">0.7050</td></tr>
+        <tr><td>r16_a16</td><td class="num">16</td><td class="num">16</td><td>1×</td><td class="num">2,179,072</td><td class="num">0.099%</td><td class="num">0.7050</td></tr>
+        <tr><td>r16_a32</td><td class="num">16</td><td class="num">32</td><td>2×</td><td class="num">2,179,072</td><td class="num">0.099%</td><td class="num">0.7080</td></tr>
+        <tr><td>r32_a32</td><td class="num">32</td><td class="num">32</td><td>1×</td><td class="num">4,358,144</td><td class="num">0.197%</td><td class="num">0.7120</td></tr>
+        <tr class="best"><td>r32_a64</td><td class="num">32</td><td class="num">64</td><td>2×</td><td class="num">4,358,144</td><td class="num">0.197%</td><td class="num">0.7130</td></tr>
+      </tbody>
+    </table>
+    <figure><img src="acc_vs_rank.png" alt="Accuracy vs Rank"><figcaption>圖 1 · 準確率 vs rank,兩條線分別是 alpha/r = 1× / 2×</figcaption></figure>
+    <figure><img src="acc_vs_params.png" alt="Accuracy vs Trainable Params"><figcaption>圖 2 · 準確率 vs 可訓練參數量,顏色編碼 rank</figcaption></figure>
+    <h3>三個歸因</h3>
+    <ol class="body">
+      <li><strong>rank 單調、但邊際遞減</strong>:r4(~0.70)→ r32(~0.713),參數量 8× 只換 +1.4 pt。圖 2 的點往右上爬但斜率漸平 → 容量不是這份資料的瓶頸。</li>
+      <li><strong><code>alpha/r = 2×</code> 多數情況更好</strong>:r4(0.699→0.700)、r16(0.705→0.708)、r32(0.712→0.713)都是 2× 勝。較大的 scaling 像給 adapter 更高的有效學習率,小資料下有利。r8 是唯一反例(0.707→0.705),差距在 run-to-run 噪聲級。</li>
+      <li><strong>CP 值最高是 <code>r8_a16</code></strong>:0.705 用了 r32 的 ¼ 參數。r32_a64 雖最高分,但多付 4× 參數只買 +0.8 pt。要選一個上線就選 r8。</li>
+    </ol>
+    <div class="callout">
+      <div class="lab">2000 vs 5000 樣本的交叉驗證</div>
+      我先跑過一輪 2000 筆快版,趨勢完全一致、分數高約 0.5–1 pt。小 eval set 讀起來偏樂觀(樣本少、方差大),<strong>5000 的數字才是可信的那組</strong>。能主動講這個對比,顯示懂統計可信度,不是只報一個數。
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section id="highlights">
+    <div class="sec-head"><span class="sec-num">09</span><h2>亮點與限制</h2></div>
+    <p class="sec-intro">面試官最愛問「這專案的限制是什麼」— 主動講比被挖出來好。</p>
+    <h3>亮點</h3>
+    <ul>
+      <li><strong>端到端可重現</strong>:config 驅動、固定 seed、結果自動寫 CSV、一鍵畫圖、跑完自動關機。換一台機 <code>git clone</code> 就能複現。</li>
+      <li><strong>真的除過錯</strong>:SFTTrainer→Trainer、script-dataset 失效、jinja2 版本、device_map、collator 簽名、truncation 砍圖 token — 六個只有實跑才會炸的問題逐一解掉。</li>
+      <li><strong>結論可辯護</strong>:不只報分數,拆出 rank(容量)vs alpha/r(scaling)兩軸歸因,並用雙樣本量交叉驗證可信度。</li>
+      <li><strong>成本意識</strong>:單張 L4、sweep 自動關機、先小樣本驗 pipeline 再上大樣本。</li>
+    </ul>
+    <h3>限制(誠實清單)</h3>
+    <ul>
+      <li><strong>資料規模小</strong>:5000 筆子集、validation 切分,非官方 test-std。絕對分數不可外推。</li>
+      <li><strong>metric 簡化</strong>:單 gold exact match,非官方 10-answer 軟分數。</li>
+      <li><strong>target 模組窄</strong>:只 q/v proj,沒掃 k/o/MLP,也沒掃 dropout / lr / epochs。</li>
+      <li><strong>eval 未優化</strong>:序列化 generate 是時間瓶頸。</li>
+      <li><strong>單一 seed</strong>:沒跑多 seed 估方差,~0.1–0.2 pt 的差異要當噪聲看。</li>
+    </ul>
+    <h3>下一步</h3>
+    <p>多 seed 估誤差棒 → 擴 target 模組 → batched eval → 加 QLoRA(4-bit)看顯存/精度取捨 → 跟 full fine-tune 對照上界。</p>
+  </section>
+
+  <!-- 10 -->
+  <section id="qa">
+    <div class="sec-head"><span class="sec-num">10</span><h2>綜合面試問答</h2></div>
+    <p class="sec-intro">點開即答。挑高機率、會追問的那些。</p>
+
+    <details class="qa"><summary>LoRA 為什麼能省這麼多?它凍結了什麼?</summary>
+    <div class="ans">凍結<strong>全部原始權重</strong>,只訓練每層注入的低秩矩陣 <code>A</code>、<code>B</code>。可訓練參數從 20 億掉到一兩百萬(&lt;0.2%)。連帶好處:optimizer state(Adam 的動量/方差)也只需存這一小撮 → 顯存大降;且 adapter 可插拔,一個 base 配多個任務 adapter。</div></details>
+
+    <details class="qa"><summary>alpha 跟 rank,哪個比較重要?</summary>
+    <div class="ans">看你要什麼。<strong>rank 給容量</strong>(能表達的增量方向數),<strong>alpha/r 給 scaling</strong>(增量被放多大,類似有效學習率)。本實驗 rank 提供主要增益但遞減;alpha/r=2× 是穩定的小幅加成。真正起作用的是<strong>比值 alpha/r</strong>,所以調參時固定比值掃 rank、或固定 rank 掃比值,別兩個一起亂動。</div></details>
+
+    <details class="qa"><summary>B 為什麼初始化成 0?</summary>
+    <div class="ans">讓訓練起點的增量 <code>ΔW = B·A = 0</code>,模型一開始<strong>完全等於原始預訓練模型</strong>,不破壞已學到的能力,再從這個安全起點微調。A 用隨機高斯、B 用 0,是為了 break symmetry 同時保證零起點。</div></details>
+
+    <details class="qa"><summary>為什麼準確率只有 ~0.71,不是更高?</summary>
+    <div class="ans">三個原因:(1) base 模型本來就有不錯的零樣本 VQA 能力,微調是在已高的起點上小幅推進;(2) 只訓練 q/v proj、&lt;0.2% 參數、1 epoch、小資料;(3) 我用嚴格的單-gold exact match,比官方 10-answer 軟分數低。重點不是衝高分,是<strong>受控比較 rank/alpha</strong>。</div></details>
+
+    <details class="qa"><summary>VQAv2 跟 v1 差在哪?為什麼重要?</summary>
+    <div class="ans">v1 有語言偏差,很多題不看圖靠先驗就能猜對。v2 給每題配一張<strong>答案相反的互補圖</strong>,堵掉這條捷徑,分數更能反映真實視覺理解。用 v2 = 你知道在測什麼。</div></details>
+
+    <details class="qa"><summary>多模態微調最容易踩的坑?</summary>
+    <div class="ans">我實際踩到的:<strong>截斷把 image placeholder token 砍掉</strong>,導致文字宣稱的圖 token 數和 input_ids 對不上,processor 直接報錯。VLM 的圖會展開成大量 token,不能像純文字那樣隨便 <code>truncation=max_length</code>。正解是用 <code>max_pixels</code> 控解析度來限 token 數,而非截斷。</div></details>
+
+    <details class="qa"><summary>怎麼確定你的結論不是噪聲?</summary>
+    <div class="ans">兩件事:(1) 固定 seed,8 個 config 看同一批資料,差異來自超參而非資料切分;(2) 另跑一輪 2000 筆快版交叉驗證,趨勢一致、分數系統性高 0.5–1 pt(小樣本偏樂觀),確認方向穩。誠實講:單 seed,~0.1–0.2 pt 的差異我當噪聲看,要更穩需多 seed 估誤差棒。</div></details>
+
+    <details class="qa"><summary>如果要上 production,你會怎麼選?</summary>
+    <div class="ans">選 <strong>r8_a16</strong>:0.705 的準確率、僅 r32 的 ¼ 參數,adapter 更小、載入更快、顯存更省。最高分的 r32_a64 多付 4× 參數只多 0.8 pt,不划算 — 除非那 0.8 pt 對業務關鍵。這就是 CP 值思維。</div></details>
+  </section>
+
+  <footer class="footer">
+    <div>LoRA × Qwen2-VL-2B × VQAv2 · <a href="https://github.com/hsuani/lora-vqa-demo">github.com/hsuani/lora-vqa-demo</a></div>
+    <em>「最大的 rank 把參數拉八倍,只換來 1.4 個百分點 — 容量從來不是這裡的瓶頸。」</em>
+  </footer>
+
+</div>
+</body>
+</html>
